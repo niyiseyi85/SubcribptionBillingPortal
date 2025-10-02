@@ -1,0 +1,17 @@
+﻿################################################################################
+# This .gitignore file was automatically created by Microsoft(R) Visual Studio.
+################################################################################
+
+/BookingApp/Veltrix-Booking-App/.vs
+/BookingApp/Veltrix-Booking-App/src/API/VeltrixBookingApp.API/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/src/API/VeltrixBookingApp.API/obj
+/BookingApp/Veltrix-Booking-App/src/Application/VeltrixBookingApp.Application/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/src/Application/VeltrixBookingApp.Application/obj
+/BookingApp/Veltrix-Booking-App/src/Domain/VeltrixBookingApp.Domain/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/src/Domain/VeltrixBookingApp.Domain/obj
+/BookingApp/Veltrix-Booking-App/src/Infrastructure/VeltrixBookingApp.Infrastructure/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/src/Infrastructure/VeltrixBookingApp.Infrastructure/obj
+/BookingApp/Veltrix-Booking-App/Veltrix-Booking-App.AppHost/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/Veltrix-Booking-App.AppHost/obj
+/BookingApp/Veltrix-Booking-App/Veltrix-Booking-App.ServiceDefaults/bin/Debug/net9.0
+/BookingApp/Veltrix-Booking-App/Veltrix-Booking-App.ServiceDefaults/obj
