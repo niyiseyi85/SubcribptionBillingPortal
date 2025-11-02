@@ -1,4 +1,8 @@
 <Solution>
+  <Folder Name="/Solution Items/">
+    <File Path=".editorconfig" />
+    <File Path="Directory.Build.props" />
+  </Folder>
   <Folder Name="/src/" />
   <Folder Name="/src/API/">
     <Project Path="src/API/VeltrixBookingApp.API/VeltrixBookingApp.API.csproj" />
@@ -12,6 +16,4 @@
   <Folder Name="/src/Infrastructure/">
     <Project Path="src/Infrastructure/VeltrixBookingApp.Infrastructure/VeltrixBookingApp.Infrastructure.csproj" />
   </Folder>
-  <Project Path="Veltrix-Booking-App.AppHost/Veltrix-Booking-App.AppHost.csproj" />
-  <Project Path="Veltrix-Booking-App.ServiceDefaults/Veltrix-Booking-App.ServiceDefaults.csproj" />
 </Solution>

@@ -1,0 +1,20 @@
+<Project>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+
+    <AnalysisLevel>latest</AnalysisLevel>
+    <AnalysisMode>All</AnalysisMode>
+    <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Suppress analyzers that require code changes beyond scope or are performance/style suggestions -->
+    <NoWarn>CA1000;CA2016;CA1848;CA1510;CA2007;CA1062;CA1056;CA1040;CA1515;CA1715;CA2254;CA1812;CA1852;CA1309;CA1307</NoWarn>
+  </PropertyGroup>
+
+  <!-- Central package versions must be defined in Directory.Packages.props for NuGet central package management -->
+
+</Project>
