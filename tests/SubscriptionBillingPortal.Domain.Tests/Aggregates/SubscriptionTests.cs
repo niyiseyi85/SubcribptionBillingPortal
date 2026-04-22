@@ -487,4 +487,142 @@ public sealed class SubscriptionTests
         act.Should().Throw<DomainException>()
             .WithMessage("*not found*");
     }
+
+    [Fact]
+    public void PayInvoice_WithEmptyPaymentReference_ShouldThrowDomainException()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        // Act
+        var act = () => subscription.PayInvoice(invoice.Id, string.Empty);
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*required*");
+    }
+
+    [Fact]
+    public void PayInvoice_WithWhitespacePaymentReference_ShouldThrowDomainException()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        // Act
+        var act = () => subscription.PayInvoice(invoice.Id, "   ");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*required*");
+    }
+
+    // ── GenerateInvoice (billing cycle advance) ───────────────────────────────
+
+    [Fact]
+    public void GenerateInvoice_WhenActive_ShouldAdvanceNextBillingDateByPlanInterval()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan); // Monthly = 30 days
+        subscription.Activate();
+        var previousNextBillingDate = subscription.NextBillingDate!.Value;
+        var before = DateTimeOffset.UtcNow;
+
+        // Act
+        subscription.GenerateInvoice();
+
+        // Assert — NextBillingDate should move forward by 30 days from now, NOT from the previous date
+        subscription.NextBillingDate!.Value.Should()
+            .BeCloseTo(before.AddDays(30), TimeSpan.FromSeconds(5));
+        subscription.NextBillingDate!.Value.Should().BeAfter(previousNextBillingDate);
+    }
+
+    [Fact]
+    public void GenerateInvoice_WhenActive_ShouldUpdateLastBillingDate()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var activationBillingDate = subscription.LastBillingDate!.Value;
+        var before = DateTimeOffset.UtcNow;
+
+        // Act
+        subscription.GenerateInvoice();
+
+        // Assert
+        subscription.LastBillingDate.Should().NotBeNull();
+        subscription.LastBillingDate!.Value.Should().BeOnOrAfter(before);
+        subscription.LastBillingDate!.Value.Should().BeOnOrAfter(activationBillingDate);
+    }
+
+    [Fact]
+    public void GenerateInvoice_WhenActive_ShouldRaiseInvoiceGeneratedEvent()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        subscription.ClearDomainEvents();
+
+        // Act
+        subscription.GenerateInvoice();
+
+        // Assert
+        subscription.DomainEvents.Should().ContainSingle(e => e is InvoiceGeneratedEvent);
+        var ev = (InvoiceGeneratedEvent)subscription.DomainEvents.First(e => e is InvoiceGeneratedEvent);
+        ev.SubscriptionId.Should().Be(subscription.Id);
+    }
+
+    // ── Event counts ──────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Activate_ShouldRaiseExactlyTwoEvents()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+
+        // Act
+        subscription.Activate();
+
+        // Assert — exactly SubscriptionActivatedEvent + InvoiceGeneratedEvent
+        subscription.DomainEvents.Should().HaveCount(2);
+        subscription.DomainEvents.Should().ContainSingle(e => e is SubscriptionActivatedEvent);
+        subscription.DomainEvents.Should().ContainSingle(e => e is InvoiceGeneratedEvent);
+    }
+
+    [Fact]
+    public void ClearDomainEvents_ShouldRemoveAllRaisedEvents()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        subscription.DomainEvents.Should().NotBeEmpty();
+
+        // Act
+        subscription.ClearDomainEvents();
+
+        // Assert
+        subscription.DomainEvents.Should().BeEmpty();
+    }
+
+    // ── Cancel raises event regardless of prior state ─────────────────────────
+
+    [Fact]
+    public void Cancel_WhenInactive_ShouldRaiseCancelledEvent()
+    {
+        // Arrange — subscription never activated
+        var customerId = Guid.NewGuid();
+        var subscription = Subscription.Create(customerId, DefaultPlan);
+
+        // Act
+        subscription.Cancel();
+
+        // Assert — the cancelled event is raised even when transitioning from Inactive
+        subscription.DomainEvents.Should().ContainSingle(e => e is SubscriptionCancelledEvent);
+        var ev = (SubscriptionCancelledEvent)subscription.DomainEvents.First(e => e is SubscriptionCancelledEvent);
+        ev.SubscriptionId.Should().Be(subscription.Id);
+        ev.CustomerId.Should().Be(customerId);
+    }
 }

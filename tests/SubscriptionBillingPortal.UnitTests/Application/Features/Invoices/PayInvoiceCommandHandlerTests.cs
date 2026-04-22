@@ -138,4 +138,23 @@ public sealed class PayInvoiceCommandHandlerTests
         result.Id.Should().Be(cachedDto.Id);
         result.Status.Should().Be("Paid");
     }
+
+    [Fact]
+    public async Task Handle_WithValidPendingInvoice_ShouldMarkIdempotencyKeyAsProcessed()
+    {
+        var subscription = Subscription.Create(Guid.NewGuid(), SubscriptionPlan.Create(PlanType.Pro, BillingInterval.Monthly));
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        _subscriptionRepositoryMock
+            .Setup(r => r.GetByIdAsync(subscription.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscription);
+
+        var command = new PayInvoiceCommand(invoice.Id, subscription.Id, "ref-001", Guid.NewGuid());
+        await _handler.Handle(command, CancellationToken.None);
+
+        _idempotencyServiceMock.Verify(
+            s => s.MarkAsProcessedAsync(command.IdempotencyKey, nameof(PayInvoiceCommand), It.IsAny<string>(), It.IsAny<CancellationToken>()),
+            Times.Once);
+    }
 }

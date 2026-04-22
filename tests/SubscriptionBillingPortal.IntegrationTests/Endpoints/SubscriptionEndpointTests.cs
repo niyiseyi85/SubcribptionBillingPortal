@@ -147,6 +147,51 @@ public sealed class SubscriptionEndpointTests
         body!.Data!.Status.Should().Be("Cancelled");
     }
 
+    [Fact]
+    public async Task CancelSubscription_WhenAlreadyCancelled_ShouldReturn422()
+    {
+        var customerId = await CreateCustomerAsync();
+        var subscriptionId = await CreateSubscriptionAsync(customerId);
+        await ActivateSubscriptionAsync(subscriptionId);
+        (await _client.PostAsync($"/subscriptions/{subscriptionId}/cancel", null)).EnsureSuccessStatusCode();
+
+        // Second cancel with a new idempotency key → domain rule violation
+        var response = await _client.PostAsync($"/subscriptions/{subscriptionId}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.UnprocessableEntity);
+    }
+
+    [Fact]
+    public async Task ActivateSubscription_WithUnknownSubscriptionId_ShouldReturn404()
+    {
+        var response = await _client.PostAsync($"/subscriptions/{Guid.NewGuid()}/activate", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task CancelSubscription_WithUnknownSubscriptionId_ShouldReturn404()
+    {
+        var response = await _client.PostAsync($"/subscriptions/{Guid.NewGuid()}/cancel", null);
+
+        response.StatusCode.Should().Be(HttpStatusCode.NotFound);
+    }
+
+    [Fact]
+    public async Task CreateSubscription_WithInvalidBillingInterval_ShouldReturn400()
+    {
+        var customerId = await CreateCustomerAsync();
+
+        var response = await _client.PostAsJsonAsync("/subscriptions", new
+        {
+            customerId,
+            planType = "Pro",
+            billingInterval = "Weekly"
+        });
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
     // ── Envelope helpers ──────────────────────────────────────────────────────
 
     private sealed class Envelope<T>

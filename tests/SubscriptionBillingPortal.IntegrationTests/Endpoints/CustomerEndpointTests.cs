@@ -75,6 +75,38 @@ public sealed class CustomerEndpointTests
         response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
     }
 
+    [Fact]
+    public async Task CreateCustomer_WithEmptyLastName_ShouldReturn400()
+    {
+        var request = new { firstName = "Jane", lastName = "", email = "jane@example.com" };
+
+        var response = await _client.PostAsJsonAsync("/customers", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateCustomer_WithWhitespaceEmail_ShouldReturn400()
+    {
+        var request = new { firstName = "Jane", lastName = "Doe", email = "   " };
+
+        var response = await _client.PostAsJsonAsync("/customers", request);
+
+        response.StatusCode.Should().Be(HttpStatusCode.BadRequest);
+    }
+
+    [Fact]
+    public async Task CreateCustomer_ResponseBody_ShouldNormalizeEmailToLowerCase()
+    {
+        var request = new { firstName = "Jane", lastName = "Doe", email = "Jane.Doe@Example.COM" };
+
+        var response = await _client.PostAsJsonAsync("/customers", request);
+        response.EnsureSuccessStatusCode();
+        var body = await response.Content.ReadFromJsonAsync<ApiResponseEnvelope<CustomerPayload>>();
+
+        body!.Data!.Email.Should().Be("jane.doe@example.com");
+    }
+
     // ── Shared response envelope helpers (used across endpoint test classes) ──
 
     internal sealed class ApiResponseEnvelope<T>
