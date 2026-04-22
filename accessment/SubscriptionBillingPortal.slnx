@@ -1,0 +1,13 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/SubscriptionBillingPortal.API/SubscriptionBillingPortal.API.csproj" />
+    <Project Path="src/SubscriptionBillingPortal.Application/SubscriptionBillingPortal.Application.csproj" />
+    <Project Path="src/SubscriptionBillingPortal.Domain/SubscriptionBillingPortal.Domain.csproj" />
+    <Project Path="src/SubscriptionBillingPortal.Infrastructure/SubscriptionBillingPortal.Infrastructure.csproj" />
+    <Project Path="src/SubscriptionBillingPortal.Shared/SubscriptionBillingPortal.Shared.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/SubscriptionBillingPortal.Application.Tests/SubscriptionBillingPortal.Application.Tests.csproj" />
+    <Project Path="tests/SubscriptionBillingPortal.Domain.Tests/SubscriptionBillingPortal.Domain.Tests.csproj" />
+  </Folder>
+</Solution>

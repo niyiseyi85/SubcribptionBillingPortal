@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FluentValidation.AspNetCore" Version="11.3.1" />
+    <PackageReference Include="Mapster" Version="10.0.7" />
+    <PackageReference Include="MediatR" Version="14.1.0" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.4" />
+    <PackageReference Include="Serilog.AspNetCore" Version="10.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\SubscriptionBillingPortal.Application\SubscriptionBillingPortal.Application.csproj" />
+    <ProjectReference Include="..\SubscriptionBillingPortal.Infrastructure\SubscriptionBillingPortal.Infrastructure.csproj" />
+    <ProjectReference Include="..\SubscriptionBillingPortal.Shared\SubscriptionBillingPortal.Shared.csproj" />
+  </ItemGroup>
+
+</Project>
