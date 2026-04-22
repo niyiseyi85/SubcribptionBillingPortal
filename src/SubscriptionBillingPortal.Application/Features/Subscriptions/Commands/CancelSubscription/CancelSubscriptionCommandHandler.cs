@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Mapster;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.DTOs;
@@ -32,11 +33,12 @@ public sealed class CancelSubscriptionCommandHandler : IRequestHandler<CancelSub
         if (await _idempotencyService.HasBeenProcessedAsync(command.IdempotencyKey, cancellationToken))
         {
             _logger.LogWarning(
-                "Duplicate CancelSubscriptionCommand detected for idempotency key '{IdempotencyKey}' — skipping.",
+                "Duplicate CancelSubscriptionCommand detected for idempotency key '{IdempotencyKey}' — returning cached response.",
                 command.IdempotencyKey);
 
-            throw new InvalidOperationException(
-                $"Command with idempotency key '{command.IdempotencyKey}' has already been processed.");
+            var cachedJson = await _idempotencyService.GetResponseAsync(command.IdempotencyKey, cancellationToken)
+                ?? throw new InvalidOperationException($"Idempotency record exists for key '{command.IdempotencyKey}' but contains no cached response.");
+            return JsonSerializer.Deserialize<SubscriptionDto>(cachedJson)!;
         }
 
         var subscription = await _unitOfWork.Subscriptions.GetByIdAsync(command.SubscriptionId, cancellationToken)
@@ -44,13 +46,14 @@ public sealed class CancelSubscriptionCommandHandler : IRequestHandler<CancelSub
 
         subscription.Cancel();
 
-        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(CancelSubscriptionCommand), cancellationToken);
+        var dto = subscription.Adapt<SubscriptionDto>();
+        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(CancelSubscriptionCommand), JsonSerializer.Serialize(dto), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
             "Subscription '{SubscriptionId}' cancelled successfully",
             subscription.Id);
 
-        return subscription.Adapt<SubscriptionDto>();
+        return dto;
     }
 }

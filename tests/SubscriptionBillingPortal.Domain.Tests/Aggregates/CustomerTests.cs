@@ -79,4 +79,49 @@ public sealed class CustomerTests
         // Assert
         customer.CreatedAt.Should().BeOnOrAfter(before);
     }
+
+    [Fact]
+    public void Create_WithWhitespaceFirstName_ShouldThrowDomainException()
+    {
+        // Act
+        var act = () => Customer.Create("   ", "Doe", "jane@example.com");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*first name cannot be empty*");
+    }
+
+    [Fact]
+    public void Create_WithWhitespaceLastName_ShouldThrowDomainException()
+    {
+        // Act
+        var act = () => Customer.Create("Jane", "   ", "jane@example.com");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*last name cannot be empty*");
+    }
+
+    [Fact]
+    public void Create_WithWhitespaceEmail_ShouldThrowDomainException()
+    {
+        // Act
+        var act = () => Customer.Create("Jane", "Doe", "   ");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*email cannot be empty*");
+    }
+
+    [Fact]
+    public void Create_ShouldTrimLeadingAndTrailingWhitespaceFromNames()
+    {
+        // Act
+        var customer = Customer.Create("  Jane  ", "  Doe  ", "jane@example.com");
+
+        // Assert
+        customer.FirstName.Should().Be("Jane");
+        customer.LastName.Should().Be("Doe");
+        customer.FullName.Should().Be("Jane Doe");
+    }
 }

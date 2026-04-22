@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Mapster;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.DTOs;
@@ -34,11 +35,12 @@ public sealed class PayInvoiceCommandHandler : IRequestHandler<PayInvoiceCommand
         if (await _idempotencyService.HasBeenProcessedAsync(command.IdempotencyKey, cancellationToken))
         {
             _logger.LogWarning(
-                "Duplicate PayInvoiceCommand detected for idempotency key '{IdempotencyKey}' — skipping.",
+                "Duplicate PayInvoiceCommand detected for idempotency key '{IdempotencyKey}' — returning cached response.",
                 command.IdempotencyKey);
 
-            throw new InvalidOperationException(
-                $"Command with idempotency key '{command.IdempotencyKey}' has already been processed.");
+            var cachedJson = await _idempotencyService.GetResponseAsync(command.IdempotencyKey, cancellationToken)
+                ?? throw new InvalidOperationException($"Idempotency record exists for key '{command.IdempotencyKey}' but contains no cached response.");
+            return JsonSerializer.Deserialize<InvoiceDto>(cachedJson)!;
         }
 
         var subscription = await _unitOfWork.Subscriptions.GetByIdAsync(command.SubscriptionId, cancellationToken)
@@ -48,8 +50,9 @@ public sealed class PayInvoiceCommandHandler : IRequestHandler<PayInvoiceCommand
         subscription.PayInvoice(command.InvoiceId, command.PaymentReference);
 
         var invoice = subscription.Invoices.First(i => i.Id == command.InvoiceId);
+        var dto = invoice.Adapt<InvoiceDto>();
 
-        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(PayInvoiceCommand), cancellationToken);
+        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(PayInvoiceCommand), JsonSerializer.Serialize(dto), cancellationToken);
 
         // UnitOfWork.SaveChangesAsync captures domain events and writes them to the Outbox atomically
         await _unitOfWork.SaveChangesAsync(cancellationToken);

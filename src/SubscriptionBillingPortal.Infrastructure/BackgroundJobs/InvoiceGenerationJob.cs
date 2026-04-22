@@ -1,3 +1,4 @@
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -19,26 +20,40 @@ public sealed class InvoiceGenerationJob : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<InvoiceGenerationJob> _logger;
-    private static readonly TimeSpan ExecutionInterval = TimeSpan.FromMinutes(1);
+    private readonly TimeSpan _executionInterval;
 
-    public InvoiceGenerationJob(IServiceScopeFactory scopeFactory, ILogger<InvoiceGenerationJob> logger)
+    public InvoiceGenerationJob(
+        IServiceScopeFactory scopeFactory,
+        ILogger<InvoiceGenerationJob> logger,
+        IConfiguration configuration)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        var intervalValue = configuration["BackgroundJobs:InvoiceGenerationInterval"];
+        _executionInterval = intervalValue is not null && TimeSpan.TryParse(intervalValue, out var parsed)
+            ? parsed
+            : TimeSpan.FromMinutes(1);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("InvoiceGenerationJob started. Running every {Interval}m.", ExecutionInterval.TotalMinutes);
+        _logger.LogInformation("InvoiceGenerationJob started. Running every {Interval}m.", _executionInterval.TotalMinutes);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             await RunBillingCycleAsync(stoppingToken);
-            await Task.Delay(ExecutionInterval, stoppingToken);
+            await Task.Delay(_executionInterval, stoppingToken);
         }
 
         _logger.LogInformation("InvoiceGenerationJob stopped.");
     }
+
+    /// <summary>
+    /// Executes a single billing cycle immediately.
+    /// Exposed as internal for integration tests — avoids the polling loop overhead.
+    /// </summary>
+    internal Task RunOnceAsync(CancellationToken cancellationToken) =>
+        RunBillingCycleAsync(cancellationToken);
 
     private async Task RunBillingCycleAsync(CancellationToken cancellationToken)
     {

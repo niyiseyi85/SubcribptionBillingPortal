@@ -7,7 +7,7 @@
     <Project Path="src/SubscriptionBillingPortal.Shared/SubscriptionBillingPortal.Shared.csproj" />
   </Folder>
   <Folder Name="/tests/">
-    <Project Path="tests/SubscriptionBillingPortal.Application.Tests/SubscriptionBillingPortal.Application.Tests.csproj" />
-    <Project Path="tests/SubscriptionBillingPortal.Domain.Tests/SubscriptionBillingPortal.Domain.Tests.csproj" />
+    <Project Path="tests/SubscriptionBillingPortal.IntegrationTests/SubscriptionBillingPortal.IntegrationTests.csproj" />
+    <Project Path="tests/SubscriptionBillingPortal.UnitTests/SubscriptionBillingPortal.UnitTests.csproj" />
   </Folder>
 </Solution>

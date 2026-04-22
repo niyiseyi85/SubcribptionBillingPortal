@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Mapster;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.DTOs;
@@ -34,17 +35,19 @@ public sealed class CreateCustomerCommandHandler : IRequestHandler<CreateCustome
         if (await _idempotencyService.HasBeenProcessedAsync(command.IdempotencyKey, cancellationToken))
         {
             _logger.LogWarning(
-                "Duplicate CreateCustomerCommand detected for idempotency key '{IdempotencyKey}' — skipping.",
+                "Duplicate CreateCustomerCommand detected for idempotency key '{IdempotencyKey}' — returning cached response.",
                 command.IdempotencyKey);
 
-            throw new InvalidOperationException(
-                $"Command with idempotency key '{command.IdempotencyKey}' has already been processed.");
+            var cachedJson = await _idempotencyService.GetResponseAsync(command.IdempotencyKey, cancellationToken)
+                ?? throw new InvalidOperationException($"Idempotency record exists for key '{command.IdempotencyKey}' but contains no cached response.");
+            return JsonSerializer.Deserialize<CustomerDto>(cachedJson)!;
         }
 
         var customer = Customer.Create(command.FirstName, command.LastName, command.Email);
 
         await _unitOfWork.Customers.AddAsync(customer, cancellationToken);
-        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(CreateCustomerCommand), cancellationToken);
+        var dto = customer.Adapt<CustomerDto>();
+        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(CreateCustomerCommand), JsonSerializer.Serialize(dto), cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         _logger.LogInformation(
@@ -52,6 +55,6 @@ public sealed class CreateCustomerCommandHandler : IRequestHandler<CreateCustome
             customer.Id,
             customer.Email);
 
-        return customer.Adapt<CustomerDto>();
+        return dto;
     }
 }

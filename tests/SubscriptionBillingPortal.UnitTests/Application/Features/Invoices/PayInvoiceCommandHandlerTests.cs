@@ -1,0 +1,141 @@
+using FluentAssertions;
+using Microsoft.Extensions.Logging.Abstractions;
+using Moq;
+using System.Text.Json;
+using SubscriptionBillingPortal.Application.Contracts.Persistence;
+using SubscriptionBillingPortal.Application.Contracts.Services;
+using SubscriptionBillingPortal.Application.DTOs;
+using SubscriptionBillingPortal.Application.Features.Invoices.Commands.PayInvoice;
+using SubscriptionBillingPortal.Application.Mappings;
+using SubscriptionBillingPortal.Domain.Aggregates;
+using SubscriptionBillingPortal.Domain.Enums;
+using SubscriptionBillingPortal.Domain.Exceptions;
+using SubscriptionBillingPortal.Domain.ValueObjects;
+
+namespace SubscriptionBillingPortal.UnitTests.Application.Features.Invoices;
+
+/// <summary>
+/// Unit tests for PayInvoiceCommandHandler.
+/// All dependencies are mocked — no infrastructure involved.
+/// Domain events flow through the Outbox (UnitOfWork), not dispatched directly.
+/// </summary>
+public sealed class PayInvoiceCommandHandlerTests
+{
+    private readonly Mock<IUnitOfWork> _unitOfWorkMock;
+    private readonly Mock<ISubscriptionRepository> _subscriptionRepositoryMock;
+    private readonly Mock<IIdempotencyService> _idempotencyServiceMock;
+    private readonly PayInvoiceCommandHandler _handler;
+
+    public PayInvoiceCommandHandlerTests()
+    {
+        MappingConfiguration.Configure();
+
+        _subscriptionRepositoryMock = new Mock<ISubscriptionRepository>();
+        _unitOfWorkMock = new Mock<IUnitOfWork>();
+        _unitOfWorkMock.Setup(u => u.Subscriptions).Returns(_subscriptionRepositoryMock.Object);
+        _unitOfWorkMock.Setup(u => u.SaveChangesAsync(It.IsAny<CancellationToken>())).ReturnsAsync(1);
+
+        _idempotencyServiceMock = new Mock<IIdempotencyService>();
+        _idempotencyServiceMock
+            .Setup(s => s.HasBeenProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(false);
+
+        _handler = new PayInvoiceCommandHandler(
+            _unitOfWorkMock.Object,
+            _idempotencyServiceMock.Object,
+            NullLogger<PayInvoiceCommandHandler>.Instance);
+    }
+
+    [Fact]
+    public async Task Handle_WithValidPendingInvoice_ShouldReturnPaidInvoiceDto()
+    {
+        var subscription = Subscription.Create(Guid.NewGuid(), SubscriptionPlan.Create(PlanType.Pro, BillingInterval.Monthly));
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        _subscriptionRepositoryMock
+            .Setup(r => r.GetByIdAsync(subscription.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscription);
+
+        var result = await _handler.Handle(
+            new PayInvoiceCommand(invoice.Id, subscription.Id, "ref-001", Guid.NewGuid()), CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(invoice.Id);
+        result.Status.Should().Be(InvoiceStatus.Paid.ToString());
+        result.PaymentReference.Should().Be("ref-001");
+    }
+
+    [Fact]
+    public async Task Handle_WithValidPendingInvoice_ShouldSaveChanges()
+    {
+        var subscription = Subscription.Create(Guid.NewGuid(), SubscriptionPlan.Create(PlanType.Pro, BillingInterval.Monthly));
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        _subscriptionRepositoryMock
+            .Setup(r => r.GetByIdAsync(subscription.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscription);
+
+        await _handler.Handle(
+            new PayInvoiceCommand(invoice.Id, subscription.Id, "ref-001", Guid.NewGuid()), CancellationToken.None);
+
+        _unitOfWorkMock.Verify(u => u.SaveChangesAsync(It.IsAny<CancellationToken>()), Times.Once);
+    }
+
+    [Fact]
+    public async Task Handle_WhenInvoiceAlreadyPaidWithDifferentReference_ShouldThrowDomainException()
+    {
+        var subscription = Subscription.Create(Guid.NewGuid(), SubscriptionPlan.Create(PlanType.Pro, BillingInterval.Monthly));
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+        subscription.PayInvoice(invoice.Id, "ref-001");
+        subscription.ClearDomainEvents();
+
+        _subscriptionRepositoryMock
+            .Setup(r => r.GetByIdAsync(subscription.Id, It.IsAny<CancellationToken>()))
+            .ReturnsAsync(subscription);
+
+        var act = () => _handler.Handle(
+            new PayInvoiceCommand(invoice.Id, subscription.Id, "ref-002", Guid.NewGuid()), CancellationToken.None);
+
+        await act.Should().ThrowAsync<DomainException>()
+            .WithMessage("*already been paid*");
+    }
+
+    [Fact]
+    public async Task Handle_WhenSubscriptionNotFound_ShouldThrowKeyNotFoundException()
+    {
+        var subscriptionId = Guid.NewGuid();
+        _subscriptionRepositoryMock
+            .Setup(r => r.GetByIdAsync(subscriptionId, It.IsAny<CancellationToken>()))
+            .ReturnsAsync((Subscription?)null);
+
+        var act = () => _handler.Handle(
+            new PayInvoiceCommand(Guid.NewGuid(), subscriptionId, "ref-001", Guid.NewGuid()), CancellationToken.None);
+
+        await act.Should().ThrowAsync<KeyNotFoundException>()
+            .WithMessage($"*{subscriptionId}*");
+    }
+
+    [Fact]
+    public async Task Handle_WhenIdempotencyKeyAlreadyProcessed_ShouldReturnCachedResponse()
+    {
+        var cachedDto = new InvoiceDto(
+            Guid.NewGuid(), Guid.NewGuid(), 29.99m, "Paid",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, "ref-001");
+        _idempotencyServiceMock
+            .Setup(s => s.HasBeenProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(true);
+        _idempotencyServiceMock
+            .Setup(s => s.GetResponseAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JsonSerializer.Serialize(cachedDto));
+
+        var result = await _handler.Handle(
+            new PayInvoiceCommand(Guid.NewGuid(), Guid.NewGuid(), "ref-001", Guid.NewGuid()), CancellationToken.None);
+
+        result.Should().NotBeNull();
+        result.Id.Should().Be(cachedDto.Id);
+        result.Status.Should().Be("Paid");
+    }
+}

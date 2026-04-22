@@ -1,6 +1,7 @@
 using MediatR;
 using Microsoft.Extensions.Logging;
 using Mapster;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.DTOs;
@@ -32,11 +33,12 @@ public sealed class ActivateSubscriptionCommandHandler : IRequestHandler<Activat
         if (await _idempotencyService.HasBeenProcessedAsync(command.IdempotencyKey, cancellationToken))
         {
             _logger.LogWarning(
-                "Duplicate ActivateSubscriptionCommand detected for idempotency key '{IdempotencyKey}' — skipping.",
+                "Duplicate ActivateSubscriptionCommand detected for idempotency key '{IdempotencyKey}' — returning cached response.",
                 command.IdempotencyKey);
 
-            throw new InvalidOperationException(
-                $"Command with idempotency key '{command.IdempotencyKey}' has already been processed.");
+            var cachedJson = await _idempotencyService.GetResponseAsync(command.IdempotencyKey, cancellationToken)
+                ?? throw new InvalidOperationException($"Idempotency record exists for key '{command.IdempotencyKey}' but contains no cached response.");
+            return JsonSerializer.Deserialize<SubscriptionDto>(cachedJson)!;
         }
 
         var subscription = await _unitOfWork.Subscriptions.GetByIdAsync(command.SubscriptionId, cancellationToken)
@@ -44,7 +46,8 @@ public sealed class ActivateSubscriptionCommandHandler : IRequestHandler<Activat
 
         subscription.Activate();
 
-        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(ActivateSubscriptionCommand), cancellationToken);
+        var dto = subscription.Adapt<SubscriptionDto>();
+        await _idempotencyService.MarkAsProcessedAsync(command.IdempotencyKey, nameof(ActivateSubscriptionCommand), JsonSerializer.Serialize(dto), cancellationToken);
 
         // UnitOfWork.SaveChangesAsync captures domain events and writes them to the Outbox atomically
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -53,6 +56,6 @@ public sealed class ActivateSubscriptionCommandHandler : IRequestHandler<Activat
             "Subscription '{SubscriptionId}' activated successfully",
             subscription.Id);
 
-        return subscription.Adapt<SubscriptionDto>();
+        return dto;
     }
 }

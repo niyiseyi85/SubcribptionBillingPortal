@@ -13,8 +13,8 @@ A production-grade **Subscription Billing System** built with **.NET 10**, demon
 | CQRS / Mediator | MediatR 14 |
 | Validation | FluentValidation 12 |
 | Object Mapping | Mapster 10 |
-| Persistence | EF Core 10 (InMemory) |
-| Background Jobs | Quartz.NET |
+| Persistence | EF Core 10 (SQLite — shared-cache in-memory for tests) |
+| Background Jobs | .NET BackgroundService |
 | Logging | Serilog |
 | Testing | xUnit + FluentAssertions + Moq |
 
@@ -38,9 +38,9 @@ dotnet build
 dotnet run --project src/SubscriptionBillingPortal.API
 ```
 
-Swagger UI is available at:
+Scalar API UI is available at:
 ```
-http://localhost:<port>/swagger
+https://localhost:<port>/scalar/v1
 ```
 
 ### Run tests
@@ -62,8 +62,10 @@ src/
 └── SubscriptionBillingPortal.Shared          # Pagination, ApiResponse wrapper
 
 tests/
-├── SubscriptionBillingPortal.Domain.Tests
-└── SubscriptionBillingPortal.Application.Tests
+├── SubscriptionBillingPortal.Domain.Tests        # Domain aggregate unit tests
+├── SubscriptionBillingPortal.Application.Tests   # Application command/query handler unit tests
+├── SubscriptionBillingPortal.UnitTests           # Additional unit tests (shared types, validators)
+└── SubscriptionBillingPortal.IntegrationTests    # Full HTTP integration tests (SQLite, real pipeline)
 ```
 
 ---
@@ -85,7 +87,7 @@ tests/
 ### Invoices
 | Method | Route | Description |
 |---|---|---|
-| `GET` | `/invoices/{subscriptionId}` | Get paginated invoices for a subscription |
+| `GET` | `/invoices?subscriptionId={id}&pageNumber=1&pageSize=20` | Get paginated invoices for a subscription |
 | `POST` | `/invoices/{id}/pay` | Pay an invoice |
 
 ### Idempotency
@@ -122,18 +124,18 @@ The `SubscriptionPlan` value object contains the full pricing table as a private
 For this scope (single currency, USD only) adding a `Money` type would be over-engineering. The decision is explicit and deliberate. A multi-currency extension would introduce a `Money` value object at that point.
 
 ### Outbox Pattern
-Domain events are never dispatched in-process during the request. Instead, `UnitOfWork.SaveChangesAsync` serialises all pending domain events into an `OutboxMessage` table atomically with the business data. `OutboxProcessorJob` (Quartz, every 10 s) deserialises and dispatches them via MediatR. This guarantees at-least-once delivery and full auditability.
+Domain events are never dispatched in-process during the request. Instead, `UnitOfWork.SaveChangesAsync` serialises all pending domain events into an `OutboxMessage` table atomically with the business data. `OutboxProcessorJob` (.NET BackgroundService, every 15 s) deserialises and dispatches them via MediatR. This guarantees at-least-once delivery and full auditability.
 
 ### Idempotent Commands
 Every command carries an `IdempotencyKey` (Guid). Before processing, the handler checks `IIdempotencyService`. If the key has been seen before, the command is short-circuited. This makes all write endpoints safe to retry (network timeout, client-side retry logic, etc.).
 
 ### Billing Cycle
-`InvoiceGenerationJob` runs on a schedule (Quartz). It queries all `Active` subscriptions whose `NextBillingDate ≤ UtcNow` and calls `GenerateInvoice()` on the aggregate. The new invoice and updated `NextBillingDate` are persisted atomically. `BillingIntervalDays` is driven by the `SubscriptionPlan` value object — Basic/Pro/Enterprise × Monthly/Quarterly/Annual each produce the correct interval automatically.
+`InvoiceGenerationJob` (.NET BackgroundService) runs every 60 seconds. It queries all `Active` subscriptions whose `NextBillingDate ≤ UtcNow` and calls `GenerateInvoice()` on the aggregate. The new invoice and updated `NextBillingDate` are persisted atomically. `BillingIntervalDays` is driven by the `SubscriptionPlan` value object — Basic/Pro/Enterprise × Monthly/Quarterly/Annual each produce the correct interval automatically.
 
 ### Clean Architecture Boundaries
 - **Domain** has zero dependencies on any other layer.  
 - **Application** depends only on Domain and defines repository/service interfaces.  
-- **Infrastructure** implements those interfaces; EF Core and Quartz live here.  
+- **Infrastructure** implements those interfaces; EF Core and background services live here.
 - **API** depends only on Application (via MediatR). It never references Domain types directly.
 
 ---
@@ -157,7 +159,7 @@ POST /invoices/<invoiceId>/pay
 { "subscriptionId": "<id>", "paymentReference": "PAY-001" }
 
 # 5. View invoices (paginated)
-GET /invoices/<subscriptionId>?pageNumber=1&pageSize=20
+GET /invoices?subscriptionId=<id>&pageNumber=1&pageSize=20
 
 # 6. Cancel
 POST /subscriptions/<id>/cancel

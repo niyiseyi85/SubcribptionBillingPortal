@@ -281,4 +281,210 @@ public sealed class SubscriptionTests
         subscription.NextBillingDate!.Value.Should()
             .BeCloseTo(before.AddDays(365), TimeSpan.FromSeconds(5));
     }
+
+    [Fact]
+    public void Activate_WithMonthlyPlan_ShouldSetNextBillingDateTo30DaysFromNow()
+    {
+        // Arrange
+        var plan = SubscriptionPlan.Create(PlanType.Basic, BillingInterval.Monthly);
+        var subscription = Subscription.Create(Guid.NewGuid(), plan);
+        var before = DateTimeOffset.UtcNow;
+
+        // Act
+        subscription.Activate();
+
+        // Assert
+        subscription.NextBillingDate!.Value.Should()
+            .BeCloseTo(before.AddDays(30), TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Activate_WithQuarterlyPlan_ShouldSetNextBillingDateTo90DaysFromNow()
+    {
+        // Arrange
+        var plan = SubscriptionPlan.Create(PlanType.Pro, BillingInterval.Quarterly);
+        var subscription = Subscription.Create(Guid.NewGuid(), plan);
+        var before = DateTimeOffset.UtcNow;
+
+        // Act
+        subscription.Activate();
+
+        // Assert
+        subscription.NextBillingDate!.Value.Should()
+            .BeCloseTo(before.AddDays(90), TimeSpan.FromSeconds(5));
+    }
+
+    [Fact]
+    public void Activate_ShouldSetLastBillingDate()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        var before = DateTimeOffset.UtcNow;
+
+        // Act
+        subscription.Activate();
+
+        // Assert
+        subscription.LastBillingDate.Should().NotBeNull();
+        subscription.LastBillingDate!.Value.Should().BeOnOrAfter(before);
+    }
+
+    // ── Create ────────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Create_ShouldReturnSubscriptionWithInactiveStatus()
+    {
+        // Act
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+
+        // Assert
+        subscription.Status.Should().Be(SubscriptionStatus.Inactive);
+        subscription.ActivatedAt.Should().BeNull();
+        subscription.CancelledAt.Should().BeNull();
+    }
+
+    [Fact]
+    public void Create_ShouldReturnSubscriptionWithNoInvoices()
+    {
+        // Act
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+
+        // Assert
+        subscription.Invoices.Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Create_ShouldAssignCorrectCustomerId()
+    {
+        // Arrange
+        var customerId = Guid.NewGuid();
+
+        // Act
+        var subscription = Subscription.Create(customerId, DefaultPlan);
+
+        // Assert
+        subscription.CustomerId.Should().Be(customerId);
+    }
+
+    // ── Cancel (edge cases) ───────────────────────────────────────────────────
+
+    [Fact]
+    public void Cancel_WhenSubscriptionIsInactive_ShouldSetStatusToCancelled()
+    {
+        // Arrange — never activated
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+
+        // Act — domain allows cancelling an inactive subscription
+        subscription.Cancel();
+
+        // Assert
+        subscription.Status.Should().Be(SubscriptionStatus.Cancelled);
+    }
+
+    // ── GenerateInvoice (explicit Cancelled case) ─────────────────────────────
+
+    [Fact]
+    public void GenerateInvoice_WhenSubscriptionIsCancelled_ShouldThrowDomainException()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        subscription.Cancel();
+
+        // Act
+        var act = () => subscription.GenerateInvoice();
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*not active*");
+    }
+
+    // ── PayInvoice ────────────────────────────────────────────────────────────
+
+    [Fact]
+    public void PayInvoice_WithPendingInvoice_ShouldSetInvoiceStatusToPaid()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+
+        // Act
+        subscription.PayInvoice(invoice.Id, "ref-001");
+
+        // Assert
+        invoice.Status.Should().Be(InvoiceStatus.Paid);
+        invoice.PaidAt.Should().NotBeNull();
+        invoice.PaymentReference.Should().Be("ref-001");
+    }
+
+    [Fact]
+    public void PayInvoice_WithPendingInvoice_ShouldRaisePaymentReceivedEvent()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        subscription.ClearDomainEvents();
+        var invoice = subscription.Invoices.First();
+
+        // Act
+        subscription.PayInvoice(invoice.Id, "ref-001");
+
+        // Assert
+        subscription.DomainEvents.Should().ContainSingle(e => e is PaymentReceivedEvent);
+        var @event = (PaymentReceivedEvent)subscription.DomainEvents.First(e => e is PaymentReceivedEvent);
+        @event.InvoiceId.Should().Be(invoice.Id);
+        @event.SubscriptionId.Should().Be(subscription.Id);
+    }
+
+    [Fact]
+    public void PayInvoice_WithSamePaymentReference_OnAlreadyPaidInvoice_ShouldBeNoOp()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+        subscription.PayInvoice(invoice.Id, "ref-001");
+        subscription.ClearDomainEvents();
+
+        // Act — same reference → idempotent no-op
+        var act = () => subscription.PayInvoice(invoice.Id, "ref-001");
+
+        // Assert — no exception, no additional event
+        act.Should().NotThrow();
+        subscription.DomainEvents.Should().BeEmpty();
+        invoice.Status.Should().Be(InvoiceStatus.Paid);
+    }
+
+    [Fact]
+    public void PayInvoice_WithDifferentPaymentReference_OnAlreadyPaidInvoice_ShouldThrowDomainException()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+        var invoice = subscription.Invoices.First();
+        subscription.PayInvoice(invoice.Id, "ref-001");
+
+        // Act
+        var act = () => subscription.PayInvoice(invoice.Id, "ref-002");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*already been paid*");
+    }
+
+    [Fact]
+    public void PayInvoice_WithNonExistentInvoiceId_ShouldThrowDomainException()
+    {
+        // Arrange
+        var subscription = Subscription.Create(Guid.NewGuid(), DefaultPlan);
+        subscription.Activate();
+
+        // Act
+        var act = () => subscription.PayInvoice(Guid.NewGuid(), "ref-001");
+
+        // Assert
+        act.Should().Throw<DomainException>()
+            .WithMessage("*not found*");
+    }
 }

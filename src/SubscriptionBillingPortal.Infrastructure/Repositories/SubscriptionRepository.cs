@@ -38,12 +38,17 @@ public sealed class SubscriptionRepository : ISubscriptionRepository
         DateTimeOffset asOf,
         CancellationToken cancellationToken = default)
     {
-        return await _context.Subscriptions
+        // The DateTimeOffset comparison cannot be composed with the enum HasConversion<string>()
+        // in a single SQL predicate on some providers (e.g. SQLite). The Status filter is
+        // pushed to SQL; the billing-date guard is applied client-side on the active set.
+        var active = await _context.Subscriptions
             .Include(s => s.Invoices)
-            .Where(s => s.Status == SubscriptionStatus.Active
-                     && s.NextBillingDate.HasValue
-                     && s.NextBillingDate.Value <= asOf)
+            .Where(s => s.Status == SubscriptionStatus.Active)
             .ToListAsync(cancellationToken);
+
+        return active
+            .Where(s => s.NextBillingDate.HasValue && s.NextBillingDate.Value <= asOf)
+            .ToList();
     }
 
     public async Task AddAsync(Subscription subscription, CancellationToken cancellationToken = default)

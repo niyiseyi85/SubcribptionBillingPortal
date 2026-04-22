@@ -30,7 +30,6 @@ public sealed class GetInvoicesQueryHandler : IRequestHandler<GetInvoicesQuery, 
 
         var subscription = await _unitOfWork.Subscriptions.GetByIdAsync(query.SubscriptionId, cancellationToken)
             ?? throw new KeyNotFoundException($"Subscription '{query.SubscriptionId}' was not found.");
-
         var allInvoices = subscription.Invoices
             .OrderByDescending(i => i.IssuedAt)
             .ToList();

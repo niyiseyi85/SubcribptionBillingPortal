@@ -2,6 +2,7 @@ using FluentAssertions;
 using FluentValidation;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.Features.Customers.Commands.CreateCustomer;
@@ -74,21 +75,27 @@ public sealed class CreateCustomerCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenIdempotencyKeyAlreadyProcessed_ShouldThrowInvalidOperationException()
+    public async Task Handle_WhenIdempotencyKeyAlreadyProcessed_ShouldReturnCachedResponse()
     {
         // Arrange
+        var cachedDto = new DTOs.CustomerDto(
+            Guid.NewGuid(), "Jane", "Doe", "Jane Doe", "jane@example.com", DateTimeOffset.UtcNow);
         _idempotencyServiceMock
             .Setup(s => s.HasBeenProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        _idempotencyServiceMock
+            .Setup(s => s.GetResponseAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JsonSerializer.Serialize(cachedDto));
 
         var command = new CreateCustomerCommand("Jane", "Doe", "jane@example.com", Guid.NewGuid());
 
         // Act
-        var act = () => _handler.Handle(command, CancellationToken.None);
+        var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already been processed*");
+        result.Should().NotBeNull();
+        result.Id.Should().Be(cachedDto.Id);
+        result.Email.Should().Be(cachedDto.Email);
     }
 
     [Fact]
@@ -103,7 +110,7 @@ public sealed class CreateCustomerCommandHandlerTests
 
         // Assert
         _idempotencyServiceMock.Verify(s =>
-            s.MarkAsProcessedAsync(idempotencyKey, nameof(CreateCustomerCommand), It.IsAny<CancellationToken>()),
+            s.MarkAsProcessedAsync(idempotencyKey, nameof(CreateCustomerCommand), It.IsAny<string>(), It.IsAny<CancellationToken>()),
             Times.Once);
     }
 }

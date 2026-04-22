@@ -24,9 +24,16 @@ public sealed class IdempotencyService : IIdempotencyService
             .AnyAsync(r => r.IdempotencyKey == idempotencyKey, cancellationToken);
     }
 
-    public async Task MarkAsProcessedAsync(Guid idempotencyKey, string commandName, CancellationToken cancellationToken = default)
+    public async Task<string?> GetResponseAsync(Guid idempotencyKey, CancellationToken cancellationToken = default)
     {
-        var record = IdempotencyRecord.Create(idempotencyKey, commandName);
+        var record = await _context.IdempotencyRecords
+            .FirstOrDefaultAsync(r => r.IdempotencyKey == idempotencyKey, cancellationToken);
+        return record?.ResponseJson;
+    }
+
+    public async Task MarkAsProcessedAsync(Guid idempotencyKey, string commandName, string responseJson, CancellationToken cancellationToken = default)
+    {
+        var record = IdempotencyRecord.Create(idempotencyKey, commandName, responseJson);
         await _context.IdempotencyRecords.AddAsync(record, cancellationToken);
     }
 }

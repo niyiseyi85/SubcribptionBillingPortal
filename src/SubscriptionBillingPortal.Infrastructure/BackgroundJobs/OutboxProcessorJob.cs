@@ -1,6 +1,7 @@
 using System.Text.Json;
 using MediatR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
@@ -20,22 +21,29 @@ public sealed class OutboxProcessorJob : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<OutboxProcessorJob> _logger;
-    private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(15);
+    private readonly TimeSpan _pollingInterval;
 
-    public OutboxProcessorJob(IServiceScopeFactory scopeFactory, ILogger<OutboxProcessorJob> logger)
+    public OutboxProcessorJob(
+        IServiceScopeFactory scopeFactory,
+        ILogger<OutboxProcessorJob> logger,
+        IConfiguration configuration)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        var intervalValue = configuration["BackgroundJobs:OutboxPollingInterval"];
+        _pollingInterval = intervalValue is not null && TimeSpan.TryParse(intervalValue, out var parsed)
+            ? parsed
+            : TimeSpan.FromSeconds(15);
     }
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("OutboxProcessorJob started. Polling every {Interval}s.", PollingInterval.TotalSeconds);
+        _logger.LogInformation("OutboxProcessorJob started. Polling every {Interval}s.", _pollingInterval.TotalSeconds);
 
         while (!stoppingToken.IsCancellationRequested)
         {
             await ProcessOutboxMessagesAsync(stoppingToken);
-            await Task.Delay(PollingInterval, stoppingToken);
+            await Task.Delay(_pollingInterval, stoppingToken);
         }
 
         _logger.LogInformation("OutboxProcessorJob stopped.");

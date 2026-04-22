@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Moq;
+using System.Text.Json;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Application.Contracts.Services;
 using SubscriptionBillingPortal.Application.Features.Subscriptions.Commands.ActivateSubscription;
@@ -98,20 +99,27 @@ public sealed class ActivateSubscriptionCommandHandlerTests
     }
 
     [Fact]
-    public async Task Handle_WhenIdempotencyKeyAlreadyProcessed_ShouldThrowInvalidOperationException()
+    public async Task Handle_WhenIdempotencyKeyAlreadyProcessed_ShouldReturnCachedResponse()
     {
         // Arrange
+        var cachedDto = new DTOs.SubscriptionDto(
+            Guid.NewGuid(), Guid.NewGuid(), "Pro", "Monthly", 29.99m, "Active",
+            DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, null);
         _idempotencyServiceMock
             .Setup(s => s.HasBeenProcessedAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
             .ReturnsAsync(true);
+        _idempotencyServiceMock
+            .Setup(s => s.GetResponseAsync(It.IsAny<Guid>(), It.IsAny<CancellationToken>()))
+            .ReturnsAsync(JsonSerializer.Serialize(cachedDto));
 
         var command = new ActivateSubscriptionCommand(Guid.NewGuid(), Guid.NewGuid());
 
         // Act
-        var act = () => _handler.Handle(command, CancellationToken.None);
+        var result = await _handler.Handle(command, CancellationToken.None);
 
         // Assert
-        await act.Should().ThrowAsync<InvalidOperationException>()
-            .WithMessage("*already been processed*");
+        result.Should().NotBeNull();
+        result.Id.Should().Be(cachedDto.Id);
+        result.Status.Should().Be("Active");
     }
 }

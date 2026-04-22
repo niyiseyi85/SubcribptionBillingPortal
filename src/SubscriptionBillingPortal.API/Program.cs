@@ -1,3 +1,4 @@
+using Scalar.AspNetCore;
 using Serilog;
 using SubscriptionBillingPortal.API.Endpoints;
 using SubscriptionBillingPortal.API.Middleware;
@@ -39,7 +40,13 @@ try
 
     if (app.Environment.IsDevelopment())
     {
-        app.MapOpenApi();
+        app.MapOpenApi();                   // raw spec  → /openapi/v1.json
+        app.MapScalarApiReference(options =>
+        {
+            options.Title       = "Subscription Billing Portal";
+            options.Theme       = ScalarTheme.Purple;
+            options.DefaultHttpClient = new(ScalarTarget.Http, ScalarClient.HttpClient);
+        });                                 // UI         → /scalar/v1
     }
 
     app.UseHttpsRedirection();
@@ -60,3 +67,6 @@ finally
 {
     Log.CloseAndFlush();
 }
+
+// Required by WebApplicationFactory<Program> in integration tests.
+public partial class Program { }

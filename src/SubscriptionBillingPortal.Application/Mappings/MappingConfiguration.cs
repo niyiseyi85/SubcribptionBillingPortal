@@ -11,8 +11,13 @@ namespace SubscriptionBillingPortal.Application.Mappings;
 /// </summary>
 public static class MappingConfiguration
 {
+    private static volatile bool _configured;
+
     public static void Configure()
     {
+        if (_configured) return;
+        _configured = true;
+
         TypeAdapterConfig<Customer, CustomerDto>.NewConfig()
             .Map(dest => dest.Id, src => src.Id)
             .Map(dest => dest.FirstName, src => src.FirstName)

@@ -1,4 +1,5 @@
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
 using SubscriptionBillingPortal.Application.Contracts.Persistence;
 using SubscriptionBillingPortal.Domain.Common;
 using SubscriptionBillingPortal.Infrastructure.Persistence;
@@ -37,9 +38,33 @@ public sealed class UnitOfWork : IUnitOfWork
     public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         WriteOutboxMessages();
+        FixNewEntitiesTrackedAsModified();
         var result = await _context.SaveChangesAsync(cancellationToken);
         ClearDomainEvents();
         return result;
+    }
+
+    /// <summary>
+    /// Corrects a subtle EF Core change-tracking quirk: entities added to a navigation
+    /// backing field (e.g. Invoice added to Subscription._invoices via a domain method)
+    /// are discovered during DetectChanges with <see cref="EntityState.Modified"/> instead
+    /// of <see cref="EntityState.Added"/> because EF Core treats any non-default Guid PK
+    /// as an existing record.  A brand-new entity has no prior DB snapshot, so every
+    /// property's OriginalValue equals its CurrentValue — we use that invariant to
+    /// identify and reclassify these entries before the actual SaveChanges call.
+    /// </summary>
+    private void FixNewEntitiesTrackedAsModified()
+    {
+        foreach (var entry in _context.ChangeTracker.Entries()
+                     .Where(e => e.State == EntityState.Modified)
+                     .ToList())
+        {
+            bool allPropertiesUnchanged = entry.Properties
+                .All(p => Equals(p.OriginalValue, p.CurrentValue));
+
+            if (allPropertiesUnchanged)
+                entry.State = EntityState.Added;
+        }
     }
 
     /// <summary>

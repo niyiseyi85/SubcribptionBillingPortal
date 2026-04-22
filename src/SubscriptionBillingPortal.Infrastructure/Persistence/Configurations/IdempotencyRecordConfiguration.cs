@@ -14,6 +14,9 @@ public sealed class IdempotencyRecordConfiguration : IEntityTypeConfiguration<Id
             .IsRequired()
             .HasMaxLength(200);
 
+        builder.Property(i => i.ResponseJson)
+            .IsRequired(false);
+
         builder.Property(i => i.CreatedAt)
             .IsRequired();
     }

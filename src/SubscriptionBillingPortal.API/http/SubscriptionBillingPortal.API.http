@@ -1,0 +1,292 @@
+### ============================================================
+### Subscription Billing Portal — API Test File
+### Run requests top-to-bottom — each step feeds the next.
+### Copy IDs from responses into the @variables below.
+### ============================================================
+
+@host = http://localhost:5038
+
+# ── Paste IDs here after running each request ───────────────
+@customerId     = d13999a5-52e6-41b6-b913-2a7c1807e2e2
+@subscriptionId = PASTE_SUBSCRIPTION_ID_HERE
+@invoiceId      = PASTE_INVOICE_ID_HERE
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 1 — Create a Customer
+### ══════════════════════════════════════════════════════════
+# @name createCustomer
+POST {{host}}/customers
+Content-Type: application/json
+Idempotency-Key: 11111111-1111-1111-1111-111111111111
+
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane.doe@example.com"
+}
+
+###
+
+### ── Validation: empty firstName → 400 ─────────────────────
+POST {{host}}/customers
+Content-Type: application/json
+Idempotency-Key: 22222222-2222-2222-2222-222222222222
+
+{
+  "firstName": "",
+  "lastName": "Doe",
+  "email": "jane@example.com"
+}
+
+###
+
+### ── Validation: invalid email → 400 ───────────────────────
+POST {{host}}/customers
+Content-Type: application/json
+Idempotency-Key: 33333333-3333-3333-3333-333333333333
+
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "not-an-email"
+}
+
+###
+
+### ── Idempotency: same key → same result, no duplicate ──────
+POST {{host}}/customers
+Content-Type: application/json
+Idempotency-Key: 11111111-1111-1111-1111-111111111111
+
+{
+  "firstName": "Jane",
+  "lastName": "Doe",
+  "email": "jane.doe@example.com"
+}
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 2 — Create a Subscription (uses @customerId)
+### ══════════════════════════════════════════════════════════
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 44444444-4444-4444-4444-444444444444
+
+{
+  "customerId": "{{customerId}}",
+  "planType": "Pro",
+  "billingInterval": "Monthly"
+}
+
+###
+
+### ── All plan / interval combos ────────────────────────────
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 55555555-5555-5555-5555-555555555555
+
+{
+  "customerId": "{{customerId}}",
+  "planType": "Basic",
+  "billingInterval": "Quarterly"
+}
+
+###
+
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 66666666-6666-6666-6666-666666666666
+
+{
+  "customerId": "{{customerId}}",
+  "planType": "Enterprise",
+  "billingInterval": "Annual"
+}
+
+###
+
+### ── Validation: unknown customer → 404 ────────────────────
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 77777777-7777-7777-7777-777777777777
+
+{
+  "customerId": "00000000-0000-0000-0000-000000000000",
+  "planType": "Pro",
+  "billingInterval": "Monthly"
+}
+
+###
+
+### ── Validation: invalid plan type → 400 ───────────────────
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 88888888-8888-8888-8888-888888888888
+
+{
+  "customerId": "{{customerId}}",
+  "planType": "Platinum",
+  "billingInterval": "Monthly"
+}
+
+###
+
+### ── Validation: invalid billing interval → 400 ────────────
+POST {{host}}/subscriptions
+Content-Type: application/json
+Idempotency-Key: 99999999-9999-9999-9999-999999999999
+
+{
+  "customerId": "{{customerId}}",
+  "planType": "Pro",
+  "billingInterval": "Weekly"
+}
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 3 — Activate the Subscription (uses @subscriptionId)
+### Automatically generates Invoice #1
+### ══════════════════════════════════════════════════════════
+POST {{host}}/subscriptions/{{subscriptionId}}/activate
+Idempotency-Key: aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa
+
+###
+
+### ── Guard: activate again → 422 ───────────────────────────
+POST {{host}}/subscriptions/{{subscriptionId}}/activate
+Idempotency-Key: bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb
+
+###
+
+### ── Guard: activate unknown subscription → 404 ────────────
+POST {{host}}/subscriptions/00000000-0000-0000-0000-000000000000/activate
+Idempotency-Key: cccccccc-cccc-cccc-cccc-cccccccccccc
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 4 — Get Invoices (uses @subscriptionId)
+### Copy invoiceId from the response into @invoiceId above.
+### ══════════════════════════════════════════════════════════
+GET {{host}}/invoices?subscriptionId={{subscriptionId}}&pageNumber=1&pageSize=20
+Accept: application/json
+
+###
+
+### ── Pagination: page 2 (empty if only 1 invoice) ──────────
+GET {{host}}/invoices?subscriptionId={{subscriptionId}}&pageNumber=2&pageSize=1
+Accept: application/json
+
+###
+
+### ── Validation: missing subscriptionId → 400 ──────────────
+GET {{host}}/invoices?subscriptionId=00000000-0000-0000-0000-000000000000&pageNumber=1&pageSize=20
+Accept: application/json
+
+###
+
+### ── Validation: zero pageSize → 400 ───────────────────────
+GET {{host}}/invoices?subscriptionId={{subscriptionId}}&pageNumber=1&pageSize=0
+Accept: application/json
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 5 — Pay the Invoice (uses @subscriptionId + @invoiceId)
+### ══════════════════════════════════════════════════════════
+POST {{host}}/invoices/{{invoiceId}}/pay
+Content-Type: application/json
+Idempotency-Key: dddddddd-dddd-dddd-dddd-dddddddddddd
+
+{
+  "subscriptionId": "{{subscriptionId}}",
+  "paymentReference": "PAY-001"
+}
+
+###
+
+### ── Idempotency: same paymentReference → 200 no-op ────────
+POST {{host}}/invoices/{{invoiceId}}/pay
+Content-Type: application/json
+Idempotency-Key: eeeeeeee-eeee-eeee-eeee-eeeeeeeeeeee
+
+{
+  "subscriptionId": "{{subscriptionId}}",
+  "paymentReference": "PAY-001"
+}
+
+###
+
+### ── Guard: different reference on paid invoice → 422 ──────
+POST {{host}}/invoices/{{invoiceId}}/pay
+Content-Type: application/json
+Idempotency-Key: ffffffff-ffff-ffff-ffff-ffffffffffff
+
+{
+  "subscriptionId": "{{subscriptionId}}",
+  "paymentReference": "PAY-DUPLICATE"
+}
+
+###
+
+### ── Validation: empty paymentReference → 400 ──────────────
+POST {{host}}/invoices/{{invoiceId}}/pay
+Content-Type: application/json
+Idempotency-Key: 12121212-1212-1212-1212-121212121212
+
+{
+  "subscriptionId": "{{subscriptionId}}",
+  "paymentReference": ""
+}
+
+###
+
+### ── Guard: invoiceId not in this subscription → 422 ───────
+POST {{host}}/invoices/00000000-0000-0000-0000-000000000000/pay
+Content-Type: application/json
+Idempotency-Key: 34343434-3434-3434-3434-343434343434
+
+{
+  "subscriptionId": "{{subscriptionId}}",
+  "paymentReference": "PAY-999"
+}
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 6 — Cancel the Subscription (uses @subscriptionId)
+### Stops all future invoice generation. History preserved.
+### ══════════════════════════════════════════════════════════
+POST {{host}}/subscriptions/{{subscriptionId}}/cancel
+Idempotency-Key: 56565656-5656-5656-5656-565656565656
+
+###
+
+### ── Guard: cancel again → 422 ─────────────────────────────
+POST {{host}}/subscriptions/{{subscriptionId}}/cancel
+Idempotency-Key: 78787878-7878-7878-7878-787878787878
+
+###
+
+### ── Guard: cancel unknown subscription → 404 ──────────────
+POST {{host}}/subscriptions/00000000-0000-0000-0000-000000000000/cancel
+Idempotency-Key: 9a9a9a9a-9a9a-9a9a-9a9a-9a9a9a9a9a9a
+
+###
+
+
+### ══════════════════════════════════════════════════════════
+### STEP 7 — Verify history is intact after cancellation
+### ══════════════════════════════════════════════════════════
+GET {{host}}/invoices?subscriptionId={{subscriptionId}}&pageNumber=1&pageSize=20
+Accept: application/json
+
+###
